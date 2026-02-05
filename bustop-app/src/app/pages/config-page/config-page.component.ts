@@ -1,9 +1,11 @@
 import { Component } from '@angular/core';
+import {MatButtonToggleModule} from '@angular/material/button-toggle';
+import {MatSliderModule} from '@angular/material/slider';
 
 @Component({
   selector: 'app-config-page',
   standalone: true,
-  imports: [],
+  imports: [MatButtonToggleModule,MatSliderModule],
   templateUrl: './config-page.component.html',
   styleUrl: './config-page.component.css'
 })
