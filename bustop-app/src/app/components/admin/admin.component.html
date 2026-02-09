@@ -1,0 +1,54 @@
+<div class="admin-container">
+  
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2>Gerenciador</h2>
+      <button class="btn-criar" (click)="criarNovaRota()">+ Nova Rota</button>
+    </div>
+
+    <div class="lista-rotas">
+      <div *ngIf="rotasVisuais.length === 0" class="empty-state">
+        Nenhuma rota criada.<br>Clique em "+ Nova Rota".
+      </div>
+
+      <div 
+        *ngFor="let rota of rotasVisuais" 
+        class="rota-card" 
+        [class.selecionada]="rota.id === rotaSelecionada?.id"
+        (click)="selecionarRota(rota)"
+      >
+        <div class="rota-info">
+          <span class="cor-dot" [style.background-color]="rota.cor"></span>
+          <input 
+            [(ngModel)]="rota.nome" 
+            (blur)="atualizarNomeRota(rota)"
+            (click)="$event.stopPropagation()"
+            class="input-nome"
+          >
+        </div>
+        <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
+            <i class="trash-icon">🗑️</i>
+        </button>
+
+        <div *ngIf="rota.id === rotaSelecionada?.id" class="rota-detalhes">
+          <small>Clique no mapa para adicionar pontos.</small>
+          <div class="pontos-lista">
+            <div *ngFor="let ponto of rota.pontos; let i = index" class="ponto-item">
+              <span>Ponto {{ i + 1 }}</span>
+              <button class="btn-del-ponto" (click)="removerPonto(rota, i)">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-wrapper">
+    <div id="mapAdmin"></div>
+    
+    <div class="map-overlay" *ngIf="rotaSelecionada">
+      Editando: <strong [style.color]="rotaSelecionada.cor">{{ rotaSelecionada.nome }}</strong>
+    </div>
+  </div>
+
+</div>
