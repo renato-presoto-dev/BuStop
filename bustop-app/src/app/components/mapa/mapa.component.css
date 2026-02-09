@@ -1,4 +1,13 @@
 #map {
-  height: 100%;
+  height: 100%; /* Garante tela cheia */
   width: 100%;
+}
+
+/* Estilo da bolinha da rota (usado dentro do L.divIcon) */
+::ng-deep .marcador-rota-usuario div {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  /* A cor de fundo (background-color) é injetada via JavaScript */
 }
