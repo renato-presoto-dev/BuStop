@@ -1,7 +1,8 @@
+import { RotaService, Rota } from './../../services/rota/rota.service';
 import { Component, AfterViewInit, OnDestroy } from '@angular/core';
 import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
-import { RotaService, Rota } from '../../services/rota/rota.service';
+
 
 @Component({
   selector: 'app-mapa',
@@ -13,20 +14,14 @@ import { RotaService, Rota } from '../../services/rota/rota.service';
 export class MapaComponent implements AfterViewInit, OnDestroy {
   private map: any;
   private rotaSubscription: Subscription | undefined;
-  
-  // Guardamos as camadas desenhadas para poder limpar antes de atualizar
   private camadasDeRotas: L.Layer[] = [];
 
   constructor(private rotaService: RotaService) {}
 
   ngAfterViewInit(): void {
-    // 1. Inicia o mapa (Padrão: São Paulo)
-    this.initMap(-23.5505, -46.6333); 
-    
-    // 2. Busca a posição real do usuário (GPS)
+    this.initMap(-23.9831, -48.8716); 
     this.carregarLocalizacaoUsuario();
 
-    // 3. Inscreve-se para RECEBER AS ROTAS do Firebase em tempo real
     this.rotaSubscription = this.rotaService.rotas$.subscribe(rotas => {
       this.desenharRotas(rotas);
     });
@@ -41,11 +36,10 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
   private initMap(lat: number, lng: number): void {
     this.map = L.map('map', {
       center: [lat, lng],
-      zoom: 13,
-      zoomControl: false // Opcional: remove botões de zoom padrão para visual mais limpo
+      zoom: 14,
+      zoomControl: false 
     });
 
-    // Adiciona tiles (mapa visual)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       minZoom: 3,
@@ -59,77 +53,69 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-
-          // Voa para a posição do usuário
           this.map.flyTo([lat, lng], 15);
 
-          // Adiciona o marcador do usuário (Bonequinho)
           const iconeBonequinho = L.icon({
-            iconUrl: 'assets/icones/pin-user.png', // Ou use 'assets/seu-boneco.png'
-            iconSize:     [20, 40],
-            iconAnchor:   [20, 40], 
-            popupAnchor:  [0, -40]
+            iconUrl: 'assets/icones/pin-user.png',
+            iconSize: [20, 40],
+            iconAnchor: [20, 40], 
+            popupAnchor: [0, -40]
           });
 
           L.marker([lat, lng], { icon: iconeBonequinho }).addTo(this.map)
-            .bindPopup("Você está aqui!")
-            .openPopup();
+            .bindPopup("Você está aqui!");
         },
-        (error) => {
-          console.warn('Erro GPS:', error);
-        }
+        (error) => console.warn('Erro GPS:', error)
       );
     }
   }
 
-  // --- Lógica de Desenhar Rotas (Vinda do Firebase) ---
+  // --- Lógica de Desenhar Rotas (Usuário Final) ---
 
   private desenharRotas(rotas: Rota[]) {
-    // 1. Limpa rotas antigas para não duplicar
     this.limparRotasDoMapa();
 
-    // 2. Loop para desenhar cada rota
     rotas.forEach(rota => {
-      if (!rota.pontos || rota.pontos.length === 0) return;
-
-      const coordenadas = rota.pontos.map(p => [p.lat, p.lng] as [number, number]);
-
-      // A. Desenha a LINHA (Caminho)
-      const linha = L.polyline(coordenadas, {
-        color: rota.cor,
-        weight: 5,
-        opacity: 0.8
-      }).addTo(this.map);
       
-      // Adiciona popup com o nome da rota ao clicar na linha
-      linha.bindPopup(`<b>${rota.nome}</b>`);
-      
-      this.camadasDeRotas.push(linha);
+      // A. Desenha a LINHA (O trajeto invisível criado pelo Admin)
+      if (rota.caminho && rota.caminho.length > 0) {
+        const coordenadas = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
+        
+        // Se a rota for cíclica, liga o fim ao começo
+        if (rota.isCiclica && coordenadas.length > 2) {
+            coordenadas.push(coordenadas[0]);
+        }
 
-      // B. Desenha os PONTOS (Paradas)
-      rota.pontos.forEach((p, index) => {
-        // Cria um ícone simples via CSS (bolinha colorida)
-        const iconePonto = L.divIcon({
-          className: 'marcador-rota-usuario',
-          html: `<div style="background-color: ${rota.cor}; box-shadow: 0 0 5px ${rota.cor};"></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6] // Centraliza
+        const linha = L.polyline(coordenadas, {
+          color: rota.cor,
+          weight: 5,
+          opacity: 0.8
+        }).addTo(this.map);
+        
+        linha.bindPopup(`<b>${rota.nome}</b>`);
+        this.camadasDeRotas.push(linha);
+      }
+
+      // B. Desenha as PARADAS DE ÔNIBUS (Visível para o usuário)
+      if (rota.paradas && rota.paradas.length > 0) {
+        const iconOnibus = L.divIcon({
+          className: 'bus-stop-icon',
+          html: `<div style="background-color:${rota.cor}; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:10px;">B</div>`,
+          iconSize: [24, 24], 
+          iconAnchor: [12, 12]
         });
 
-        const marcador = L.marker([p.lat, p.lng], { icon: iconePonto }).addTo(this.map);
-        
-        // Popup opcional na parada
-        marcador.bindPopup(`<b>${rota.nome}</b><br>Parada ${index + 1}`);
-        
-        this.camadasDeRotas.push(marcador);
-      });
+        rota.paradas.forEach((p) => {
+          const marcador = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
+          marcador.bindPopup(`<b>${p.nome || 'Ponto de Ônibus'}</b><br><small>Rota: ${rota.nome}</small>`);
+          this.camadasDeRotas.push(marcador);
+        });
+      }
     });
   }
 
   private limparRotasDoMapa() {
-    this.camadasDeRotas.forEach(layer => {
-      this.map.removeLayer(layer);
-    });
+    this.camadasDeRotas.forEach(layer => this.map.removeLayer(layer));
     this.camadasDeRotas = [];
   }
 }

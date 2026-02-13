@@ -2,7 +2,7 @@
   
   <div class="sidebar">
     <div class="sidebar-header">
-      <h2>Gerenciador</h2>
+      <h2>Gerenciador de Rotas</h2>
       <button class="btn-criar" (click)="criarNovaRota()">+ Nova Rota</button>
     </div>
 
@@ -26,17 +26,47 @@
             class="input-nome"
           >
         </div>
-        <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
-            <i class="trash-icon">🗑️</i>
-        </button>
+        <div class="btnexcluir">
+          <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
+              🗑️
+          </button>
+        </div>
 
-        <div *ngIf="rota.id === rotaSelecionada?.id" class="rota-detalhes">
-          <small>Clique no mapa para adicionar pontos.</small>
-          <div class="pontos-lista">
-            <div *ngFor="let ponto of rota.pontos; let i = index" class="ponto-item">
-              <span>Ponto {{ i + 1 }}</span>
-              <button class="btn-del-ponto" (click)="removerPonto(rota, i)">✕</button>
-            </div>
+        <div *ngIf="rota.id === rotaSelecionada?.id" class="rota-controles">
+          <label class="ciclo-toggle">
+            <input type="checkbox" [checked]="rota.isCiclica" (change)="alternarCiclo(rota)">
+            Rota Cíclica (Volta ao início)
+          </label>
+
+            flex-direction: column;
+<div class="ferramentas-desenho">
+            <button 
+              [class.ativo]="modoEdicao === 'caminho'" 
+              (click)="modoEdicao = 'caminho'; $event.stopPropagation()">
+              〰️ Trajeto
+            </button>
+            <button 
+              [class.ativo]="modoEdicao === 'parada'" 
+              (click)="modoEdicao = 'parada'; $event.stopPropagation()">
+              🚏 Parada
+            </button>
+            <button 
+              [class.ativo]="modoEdicao === 'borracha'" 
+              class="btn-borracha"
+              (click)="modoEdicao = 'borracha'; $event.stopPropagation()">
+              🧹 Apagar
+            </button>
+          </div>
+          
+          <small class="dica-ferramenta" *ngIf="modoEdicao !== 'borracha'">
+            Selecione a ferramenta e clique no mapa para desenhar.
+          </small>
+          <small class="dica-ferramenta" *ngIf="modoEdicao === 'borracha'" style="color: #dc3545; font-weight: bold;">
+            Borracha ativa: Clique sobre um ponto ou parada para excluí-lo.
+          </small>
+
+          <div style="margin-top: 10px; font-size: 0.8rem; color: #666;">
+            Resumo: {{ rota.paradas?.length || 0 }} paradas | {{ rota.caminho?.length || 0 }} nós de trajeto
           </div>
         </div>
       </div>
@@ -45,10 +75,6 @@
 
   <div class="map-wrapper">
     <div id="mapAdmin"></div>
-    
-    <div class="map-overlay" *ngIf="rotaSelecionada">
-      Editando: <strong [style.color]="rotaSelecionada.cor">{{ rotaSelecionada.nome }}</strong>
-    </div>
   </div>
 
 </div>

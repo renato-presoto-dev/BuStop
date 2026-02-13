@@ -11,16 +11,22 @@ import {
   onSnapshot 
 } from 'firebase/firestore';
 
-export interface Ponto {
+export interface Coordenada {
   lat: number;
   lng: number;
 }
 
+export interface Parada extends Coordenada {
+  nome?: string; 
+}
+
 export interface Rota {
-  id?: string; // No Firebase o ID é uma string gerada automaticamente
+  id?: string;
   nome: string;
   cor: string;
-  pontos: Ponto[];
+  isCiclica: boolean;    
+  caminho: Coordenada[]; 
+  paradas: Parada[];     
 }
 
 @Injectable({
@@ -30,7 +36,6 @@ export class RotaService {
   private db: Firestore;
   private rotasSubject = new BehaviorSubject<Rota[]>([]);
   
-  // O mundo externo (componentes) só vê isso:
   rotas$ = this.rotasSubject.asObservable();
 
   constructor(private firebaseService: FirebaseService) {
@@ -42,13 +47,19 @@ export class RotaService {
   private ouvirRotasEmTempoReal() {
     const rotasCollection = collection(this.db, 'rotas');
 
-    // onSnapshot é o "escutador" do Firebase
     onSnapshot(rotasCollection, (snapshot) => {
       const rotasAtualizadas: Rota[] = snapshot.docs.map(doc => {
-        return { id: doc.id, ...doc.data() } as Rota;
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          nome: data['nome'],
+          cor: data['cor'],
+          isCiclica: data['isCiclica'] || false, // Garante que não venha nulo
+          caminho: data['caminho'] || [],        // Garante que seja um array
+          paradas: data['paradas'] || []         // Garante que seja um array
+        } as Rota;
       });
       
-      // Avisa os componentes que os dados mudaram
       this.rotasSubject.next(rotasAtualizadas);
     }, (error) => {
       console.error("Erro ao buscar rotas:", error);
@@ -57,21 +68,24 @@ export class RotaService {
 
   // 2. CREATE (Criar nova rota)
   async adicionarRota(rota: Rota) {
-    // Remove o ID se existir, pois o Firebase cria um novo
     const { id, ...dadosDaRota } = rota; 
     const rotasCollection = collection(this.db, 'rotas');
     await addDoc(rotasCollection, dadosDaRota);
   }
 
-  // 3. UPDATE (Atualizar pontos ou nome)
+  // 3. UPDATE (Atualizar rotas no banco)
   async atualizarRota(rota: Rota) {
     if (!rota.id) return;
     
     const docRef = doc(this.db, 'rotas', rota.id);
+    
+    // AQUI ESTAVA O ERRO: Agora enviamos as propriedades corretas
     await updateDoc(docRef, {
       nome: rota.nome,
       cor: rota.cor,
-      pontos: rota.pontos
+      isCiclica: rota.isCiclica,
+      caminho: rota.caminho,
+      paradas: rota.paradas
     });
   }
 
