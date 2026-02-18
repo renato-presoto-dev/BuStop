@@ -1,2 +1,29 @@
-<div id="map" class="mapa">
+<div class="mapa-container">
+  <div id="map"></div>
+
+  <div class="info-panel" *ngIf="rotaSelecionada && paradaSelecionada">
+    <div class="panel-header" [style.border-left-color]="rotaSelecionada.cor">
+      <div>
+        <h3>{{ rotaSelecionada.nome }}</h3>
+        <p>Ponto: <strong>{{ paradaSelecionada.nome }}</strong></p>
+      </div>
+      <button class="btn-fechar" (click)="fecharPainel()">✕</button>
+    </div>
+
+    <div class="panel-content">
+      <h4>Próximos Horários:</h4>
+      <div class="horarios-grid">
+        <span *ngFor="let hora of rotaSelecionada.horarios" class="badge-hora">
+          {{ hora }}
+        </span>
+        <span *ngIf="!rotaSelecionada.horarios?.length" class="sem-horario">
+          Consulte a central.
+        </span>
+      </div>
+      
+      <div class="distancia-info" *ngIf="distanciaUsuario">
+        Você está a <strong>{{ distanciaUsuario }}</strong> deste ponto.
+      </div>
+    </div>
+  </div>
 </div>

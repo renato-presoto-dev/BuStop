@@ -26,7 +26,8 @@ export interface Rota {
   cor: string;
   isCiclica: boolean;    
   caminho: Coordenada[]; 
-  paradas: Parada[];     
+  paradas: Parada[];
+  horarios?: string[];     
 }
 
 @Injectable({
