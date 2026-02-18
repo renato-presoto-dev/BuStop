@@ -6,7 +6,6 @@ import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
 
 
-// Interface estendida apenas para o controle visual do mapa no painel admin
 interface RotaVisual extends Rota {
   polylineObj?: L.Polyline;
   marcadoresObj?: L.Marker[];
@@ -27,15 +26,16 @@ export class AdminComponent implements OnInit, OnDestroy {
   rotasVisuais: RotaVisual[] = [];
   rotaSelecionada: RotaVisual | null = null;
   
-  // Ferramentas: Caminho, Parada ou Borracha
+  // Controle da Interface
+  sidebarAberta: boolean = true; // Controla se a barra lateral está visível
   modoEdicao: 'caminho' | 'parada' | 'borracha' = 'caminho'; 
   
   coresDisponiveis = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6'];
 
-  // --- VARIÁVEIS DO MODAL DE EDIÇÃO DE PONTO ---
-  paradaEmEdicao: Parada | null = null;           // O ponto sendo editado agora
-  rotaDaParadaEmEdicao: RotaVisual | null = null; // A rota dona desse ponto
-  novoHorarioTemp: string = '';                   // Input temporário para hora
+  // Variáveis do Modal de Edição
+  paradaEmEdicao: Parada | null = null;
+  rotaDaParadaEmEdicao: RotaVisual | null = null;
+  novoHorarioTemp: string = '';
 
   constructor(private rotaService: RotaService) {}
 
@@ -52,6 +52,19 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
+  // --- NOVA FUNÇÃO: TOGGLE SIDEBAR ---
+  toggleSidebar() {
+    this.sidebarAberta = !this.sidebarAberta;
+    
+    // Avisa o Leaflet que o tamanho da div do mapa mudou
+    // Espera 300ms (tempo da transição CSS) para recalcular
+    setTimeout(() => {
+      if (this.map) {
+        this.map.invalidateSize();
+      }
+    }, 300);
+  }
+
   private initMap(): void {
     this.map = L.map('mapAdmin', {
       center: [-23.5505, -46.6333],
@@ -63,7 +76,6 @@ export class AdminComponent implements OnInit, OnDestroy {
       attribution: '© OpenStreetMap'
     }).addTo(this.map);
 
-    // Evento de Clique no Mapa (Cria coisas novas)
     this.map.on('click', (e: any) => {
       if (this.rotaSelecionada) {
         if (this.modoEdicao === 'caminho') {
@@ -71,14 +83,13 @@ export class AdminComponent implements OnInit, OnDestroy {
         } else if (this.modoEdicao === 'parada') {
           this.adicionarParadaDeOnibus(this.rotaSelecionada, e.latlng.lat, e.latlng.lng);
         }
-        // Se for borracha, clicar no vazio não faz nada
       } else {
         alert('Selecione uma rota na lista lateral para começar!');
       }
     });
   }
 
-  // --- Ações de Rota (Sidebar) ---
+  // --- Ações de Rota ---
 
   criarNovaRota() {
     const cor = this.coresDisponiveis[this.rotasVisuais.length % this.coresDisponiveis.length];
@@ -96,9 +107,8 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   selecionarRota(rota: RotaVisual) {
     this.rotaSelecionada = rota;
-    this.fecharEditorParada(); // Garante que fecha o modal se trocar de rota
+    this.fecharEditorParada();
     
-    // Centraliza
     if (rota.paradas && rota.paradas.length > 0) {
       const ultimo = rota.paradas[rota.paradas.length - 1];
       this.map.panTo([ultimo.lat, ultimo.lng]);
@@ -117,7 +127,6 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ESTA ERA A FUNÇÃO QUE FALTAVA
   atualizarNomeRota(rota: RotaVisual) {
     this.salvarRotaNoFirebase(rota);
   }
@@ -141,7 +150,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       lat, 
       lng, 
       nome: `Ponto ${rota.paradas.length + 1}`,
-      horarios: [] // Inicializa lista vazia
+      horarios: []
     });
     this.salvarRotaNoFirebase(rota);
   }
@@ -153,7 +162,6 @@ export class AdminComponent implements OnInit, OnDestroy {
     this.paradaEmEdicao = parada;
     this.novoHorarioTemp = '';
     
-    // Garante que o array existe
     if (!this.paradaEmEdicao.horarios) {
       this.paradaEmEdicao.horarios = [];
     }
@@ -167,10 +175,9 @@ export class AdminComponent implements OnInit, OnDestroy {
   adicionarHorario() {
     if (this.paradaEmEdicao && this.novoHorarioTemp) {
       if (!this.paradaEmEdicao.horarios) this.paradaEmEdicao.horarios = [];
-      
       this.paradaEmEdicao.horarios.push(this.novoHorarioTemp);
-      this.paradaEmEdicao.horarios.sort(); // Ordena automaticamente (08:00 antes de 09:00)
-      this.novoHorarioTemp = ''; // Limpa o campo
+      this.paradaEmEdicao.horarios.sort();
+      this.novoHorarioTemp = '';
     }
   }
 
@@ -182,12 +189,11 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   salvarEdicaoParada() {
     if (this.rotaDaParadaEmEdicao) {
-      this.salvarRotaNoFirebase(this.rotaDaParadaEmEdicao); // Salva tudo no Firebase
-      this.fecharEditorParada(); // Fecha o modal
+      this.salvarRotaNoFirebase(this.rotaDaParadaEmEdicao);
+      this.fecharEditorParada();
     }
   }
 
-  // --- Helper para salvar no banco ---
   private async salvarRotaNoFirebase(rota: RotaVisual) {
     if (rota.id) {
       await this.rotaService.atualizarRota({
@@ -212,7 +218,6 @@ export class AdminComponent implements OnInit, OnDestroy {
       return visual;
     });
 
-    // Mantém a seleção ativa se a rota ainda existir
     if (this.rotaSelecionada) {
       const rotaAindaExiste = this.rotasVisuais.find(r => r.id === this.rotaSelecionada!.id);
       this.rotaSelecionada = rotaAindaExiste || null;
@@ -222,7 +227,7 @@ export class AdminComponent implements OnInit, OnDestroy {
   private desenharRotaNoMapa(rota: RotaVisual) {
     rota.marcadoresObj = [];
 
-    // 1. Desenha a LINHA (Caminho)
+    // 1. Caminho
     if (rota.caminho && rota.caminho.length > 0) {
       const coordenadas = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
       if (rota.isCiclica && coordenadas.length > 2) coordenadas.push(coordenadas[0]);
@@ -231,7 +236,6 @@ export class AdminComponent implements OnInit, OnDestroy {
         color: rota.cor, weight: 5, opacity: 0.7 
       }).addTo(this.map);
 
-      // Pontos do caminho (Bolinhas brancas)
       rota.caminho.forEach((p, index) => {
         const icon = L.divIcon({
           className: 'admin-path-node',
@@ -241,7 +245,6 @@ export class AdminComponent implements OnInit, OnDestroy {
         
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(this.map);
         
-        // Clique para apagar (se borracha)
         marker.on('click', (e) => {
           if (e.originalEvent) e.originalEvent.stopPropagation();
           if (this.modoEdicao === 'borracha') {
@@ -254,7 +257,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       });
     }
 
-    // 2. Desenha as PARADAS
+    // 2. Paradas
     if (rota.paradas && rota.paradas.length > 0) {
       const iconOnibus = L.divIcon({
         className: 'bus-stop-icon',
@@ -265,7 +268,6 @@ export class AdminComponent implements OnInit, OnDestroy {
       rota.paradas.forEach((p, index) => {
         const marker = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
         
-        // Clique na Parada: Borracha OU Editor
         marker.on('click', (e) => {
           if (e.originalEvent) e.originalEvent.stopPropagation();
           
@@ -273,7 +275,6 @@ export class AdminComponent implements OnInit, OnDestroy {
             rota.paradas.splice(index, 1);
             this.salvarRotaNoFirebase(rota);
           } else {
-            // ABRIR O MODAL DE EDIÇÃO
             this.abrirEditorParada(rota, p);
           }
         });

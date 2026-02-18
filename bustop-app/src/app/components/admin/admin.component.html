@@ -1,8 +1,17 @@
 <div class="admin-container">
   
-  <div class="sidebar">
+  <button 
+    class="btn-toggle-sidebar" 
+    [class.fechada]="!sidebarAberta" 
+    (click)="toggleSidebar()"
+    title="Abrir/Fechar Menu"
+  >
+    {{ sidebarAberta ? '◀' : '▶' }}
+  </button>
+
+  <div class="sidebar" [class.fechada]="!sidebarAberta">
     <div class="sidebar-header">
-      <h2>Gerenciador de Rotas</h2>
+      <h2>Gerenciador</h2>
       <button class="btn-criar" (click)="criarNovaRota()">+ Nova Rota</button>
     </div>
 
@@ -26,20 +35,17 @@
             class="input-nome"
           >
         </div>
-        <div class="btnexcluir">
-          <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
-              🗑️
-          </button>
-        </div>
+        <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
+            ❌
+        </button>
 
         <div *ngIf="rota.id === rotaSelecionada?.id" class="rota-controles">
           <label class="ciclo-toggle">
             <input type="checkbox" [checked]="rota.isCiclica" (change)="alternarCiclo(rota)">
-            Rota Cíclica (Volta ao início)
+            Rota Cíclica
           </label>
 
-            flex-direction: column;
-<div class="ferramentas-desenho">
+          <div class="ferramentas-desenho">
             <button 
               [class.ativo]="modoEdicao === 'caminho'" 
               (click)="modoEdicao = 'caminho'; $event.stopPropagation()">
@@ -59,13 +65,11 @@
           </div>
           
           <small class="dica-ferramenta" *ngIf="modoEdicao !== 'borracha'">
-            Selecione a ferramenta e clique no mapa para desenhar.
+            Clique no mapa para desenhar.
           </small>
-          <small class="dica-ferramenta" *ngIf="modoEdicao === 'borracha'" style="color: #dc3545; font-weight: bold;">
-            Borracha ativa: Clique sobre um ponto ou parada para excluí-lo.
+          <small class="dica-ferramenta" *ngIf="modoEdicao === 'borracha'" style="color: #dc3545;">
+            Clique num ponto para excluir.
           </small>
-
-        
         </div>
       </div>
     </div>
@@ -74,7 +78,8 @@
   <div class="map-wrapper">
     <div id="mapAdmin"></div>
   </div>
-<div class="modal-backdrop" *ngIf="paradaEmEdicao">
+
+  <div class="modal-backdrop" *ngIf="paradaEmEdicao">
     <div class="modal-content">
       <div class="modal-header">
         <h3>Editar Ponto</h3>
@@ -88,7 +93,6 @@
         <hr>
 
         <label>Horários de Passagem:</label>
-        
         <div class="add-horario-row">
           <input type="time" [(ngModel)]="novoHorarioTemp" class="form-control">
           <button (click)="adicionarHorario()" class="btn-add">Adicionar</button>
@@ -100,7 +104,7 @@
             <span (click)="removerHorario(i)" title="Remover">✕</span>
           </div>
           <div *ngIf="!paradaEmEdicao.horarios?.length" style="color: #999; font-size: 0.8rem;">
-            Nenhum horário cadastrado.
+            Nenhum horário.
           </div>
         </div>
       </div>
