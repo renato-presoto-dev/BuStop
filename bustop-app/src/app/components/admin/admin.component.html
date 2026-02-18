@@ -74,5 +74,41 @@
   <div class="map-wrapper">
     <div id="mapAdmin"></div>
   </div>
+<div class="modal-backdrop" *ngIf="paradaEmEdicao">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Editar Ponto</h3>
+        <button class="btn-fechar" (click)="fecharEditorParada()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <label>Nome do Ponto:</label>
+        <input type="text" [(ngModel)]="paradaEmEdicao.nome" class="form-control" placeholder="Ex: Praça Central">
+
+        <hr>
+
+        <label>Horários de Passagem:</label>
+        
+        <div class="add-horario-row">
+          <input type="time" [(ngModel)]="novoHorarioTemp" class="form-control">
+          <button (click)="adicionarHorario()" class="btn-add">Adicionar</button>
+        </div>
+
+        <div class="lista-horarios">
+          <div *ngFor="let hora of paradaEmEdicao.horarios; let i = index" class="horario-tag">
+            {{ hora }}
+            <span (click)="removerHorario(i)" title="Remover">✕</span>
+          </div>
+          <div *ngIf="!paradaEmEdicao.horarios?.length" style="color: #999; font-size: 0.8rem;">
+            Nenhum horário cadastrado.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-salvar" (click)="salvarEdicaoParada()">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
 
 </div>

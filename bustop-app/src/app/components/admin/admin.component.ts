@@ -1,4 +1,4 @@
-import { RotaService, Rota, Coordenada, Parada } from './../../services/rota/rota.service';
+import { RotaService, Rota, Parada  } from './../../services/rota/rota.service';
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -27,17 +27,20 @@ export class AdminComponent implements OnInit, OnDestroy {
   rotasVisuais: RotaVisual[] = [];
   rotaSelecionada: RotaVisual | null = null;
   
-  // Controla qual ferramenta está ativa: trajeto, parada ou borracha
+  // Ferramentas: Caminho, Parada ou Borracha
   modoEdicao: 'caminho' | 'parada' | 'borracha' = 'caminho'; 
   
   coresDisponiveis = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6'];
+
+  // --- VARIÁVEIS DO MODAL DE EDIÇÃO DE PONTO ---
+  paradaEmEdicao: Parada | null = null;           // O ponto sendo editado agora
+  rotaDaParadaEmEdicao: RotaVisual | null = null; // A rota dona desse ponto
+  novoHorarioTemp: string = '';                   // Input temporário para hora
 
   constructor(private rotaService: RotaService) {}
 
   ngOnInit(): void {
     this.initMap();
-
-    // Inscreve-se para receber atualizações do Firebase em tempo real
     this.rotaSubscription = this.rotaService.rotas$.subscribe(rotasDoBanco => {
       this.sincronizarInterface(rotasDoBanco);
     });
@@ -51,7 +54,7 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   private initMap(): void {
     this.map = L.map('mapAdmin', {
-      center: [-23.9831, -48.8716],
+      center: [-23.5505, -46.6333],
       zoom: 13
     });
 
@@ -60,7 +63,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       attribution: '© OpenStreetMap'
     }).addTo(this.map);
 
-    // Evento de Clique no Mapa baseado na ferramenta selecionada
+    // Evento de Clique no Mapa (Cria coisas novas)
     this.map.on('click', (e: any) => {
       if (this.rotaSelecionada) {
         if (this.modoEdicao === 'caminho') {
@@ -68,14 +71,14 @@ export class AdminComponent implements OnInit, OnDestroy {
         } else if (this.modoEdicao === 'parada') {
           this.adicionarParadaDeOnibus(this.rotaSelecionada, e.latlng.lat, e.latlng.lng);
         }
-        // Se a ferramenta for 'borracha', clicar no mapa vazio não faz nada.
+        // Se for borracha, clicar no vazio não faz nada
       } else {
-        alert('Selecione ou crie uma rota na lista lateral para começar a desenhar!');
+        alert('Selecione uma rota na lista lateral para começar!');
       }
     });
   }
 
-  // --- Ações Principais ---
+  // --- Ações de Rota (Sidebar) ---
 
   criarNovaRota() {
     const cor = this.coresDisponiveis[this.rotasVisuais.length % this.coresDisponiveis.length];
@@ -93,8 +96,9 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   selecionarRota(rota: RotaVisual) {
     this.rotaSelecionada = rota;
+    this.fecharEditorParada(); // Garante que fecha o modal se trocar de rota
     
-    // Centraliza o mapa no último ponto de ônibus ou último ponto do caminho
+    // Centraliza
     if (rota.paradas && rota.paradas.length > 0) {
       const ultimo = rota.paradas[rota.paradas.length - 1];
       this.map.panTo([ultimo.lat, ultimo.lng]);
@@ -113,7 +117,17 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  // --- Lógica de Edição da Rota ---
+  // ESTA ERA A FUNÇÃO QUE FALTAVA
+  atualizarNomeRota(rota: RotaVisual) {
+    this.salvarRotaNoFirebase(rota);
+  }
+
+  alternarCiclo(rota: RotaVisual) {
+    rota.isCiclica = !rota.isCiclica;
+    this.salvarRotaNoFirebase(rota);
+  }
+
+  // --- Lógica de Edição no Mapa ---
 
   adicionarPontoCaminho(rota: RotaVisual, lat: number, lng: number) {
     if (!rota.caminho) rota.caminho = [];
@@ -123,20 +137,57 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   adicionarParadaDeOnibus(rota: RotaVisual, lat: number, lng: number) {
     if (!rota.paradas) rota.paradas = [];
-    rota.paradas.push({ lat, lng, nome: `Ponto ${rota.paradas.length + 1}` });
+    rota.paradas.push({ 
+      lat, 
+      lng, 
+      nome: `Ponto ${rota.paradas.length + 1}`,
+      horarios: [] // Inicializa lista vazia
+    });
     this.salvarRotaNoFirebase(rota);
   }
 
-  alternarCiclo(rota: RotaVisual) {
-    rota.isCiclica = !rota.isCiclica;
-    this.salvarRotaNoFirebase(rota);
+  // --- Lógica do Modal de Edição de Ponto ---
+
+  abrirEditorParada(rota: RotaVisual, parada: Parada) {
+    this.rotaDaParadaEmEdicao = rota;
+    this.paradaEmEdicao = parada;
+    this.novoHorarioTemp = '';
+    
+    // Garante que o array existe
+    if (!this.paradaEmEdicao.horarios) {
+      this.paradaEmEdicao.horarios = [];
+    }
   }
 
-  atualizarNomeRota(rota: RotaVisual) {
-    this.salvarRotaNoFirebase(rota);
+  fecharEditorParada() {
+    this.paradaEmEdicao = null;
+    this.rotaDaParadaEmEdicao = null;
   }
 
-  // Helper para salvar no banco
+  adicionarHorario() {
+    if (this.paradaEmEdicao && this.novoHorarioTemp) {
+      if (!this.paradaEmEdicao.horarios) this.paradaEmEdicao.horarios = [];
+      
+      this.paradaEmEdicao.horarios.push(this.novoHorarioTemp);
+      this.paradaEmEdicao.horarios.sort(); // Ordena automaticamente (08:00 antes de 09:00)
+      this.novoHorarioTemp = ''; // Limpa o campo
+    }
+  }
+
+  removerHorario(index: number) {
+    if (this.paradaEmEdicao && this.paradaEmEdicao.horarios) {
+      this.paradaEmEdicao.horarios.splice(index, 1);
+    }
+  }
+
+  salvarEdicaoParada() {
+    if (this.rotaDaParadaEmEdicao) {
+      this.salvarRotaNoFirebase(this.rotaDaParadaEmEdicao); // Salva tudo no Firebase
+      this.fecharEditorParada(); // Fecha o modal
+    }
+  }
+
+  // --- Helper para salvar no banco ---
   private async salvarRotaNoFirebase(rota: RotaVisual) {
     if (rota.id) {
       await this.rotaService.atualizarRota({
@@ -161,6 +212,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       return visual;
     });
 
+    // Mantém a seleção ativa se a rota ainda existir
     if (this.rotaSelecionada) {
       const rotaAindaExiste = this.rotasVisuais.find(r => r.id === this.rotaSelecionada!.id);
       this.rotaSelecionada = rotaAindaExiste || null;
@@ -170,22 +222,16 @@ export class AdminComponent implements OnInit, OnDestroy {
   private desenharRotaNoMapa(rota: RotaVisual) {
     rota.marcadoresObj = [];
 
-    // 1. Desenha a LINHA DO TRAJETO e seus pontos invisíveis pro usuário
+    // 1. Desenha a LINHA (Caminho)
     if (rota.caminho && rota.caminho.length > 0) {
       const coordenadas = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
-      
-      // Se for cíclica, conecta o último ponto ao primeiro
-      if (rota.isCiclica && coordenadas.length > 2) {
-        coordenadas.push(coordenadas[0]);
-      }
+      if (rota.isCiclica && coordenadas.length > 2) coordenadas.push(coordenadas[0]);
 
       rota.polylineObj = L.polyline(coordenadas, { 
-        color: rota.cor, 
-        weight: 5, 
-        opacity: 0.7 
+        color: rota.cor, weight: 5, opacity: 0.7 
       }).addTo(this.map);
 
-      // Desenha as bolinhas brancas (nós do caminho) APENAS PARA O ADMIN
+      // Pontos do caminho (Bolinhas brancas)
       rota.caminho.forEach((p, index) => {
         const icon = L.divIcon({
           className: 'admin-path-node',
@@ -195,10 +241,9 @@ export class AdminComponent implements OnInit, OnDestroy {
         
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(this.map);
         
-        // Evento de clique para a BORRACHA
+        // Clique para apagar (se borracha)
         marker.on('click', (e) => {
-          if (e.originalEvent) e.originalEvent.stopPropagation(); // Evita clicar no mapa por acidente
-          
+          if (e.originalEvent) e.originalEvent.stopPropagation();
           if (this.modoEdicao === 'borracha') {
             rota.caminho.splice(index, 1);
             this.salvarRotaNoFirebase(rota);
@@ -209,7 +254,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       });
     }
 
-    // 2. Desenha as PARADAS DE ÔNIBUS
+    // 2. Desenha as PARADAS
     if (rota.paradas && rota.paradas.length > 0) {
       const iconOnibus = L.divIcon({
         className: 'bus-stop-icon',
@@ -219,18 +264,17 @@ export class AdminComponent implements OnInit, OnDestroy {
 
       rota.paradas.forEach((p, index) => {
         const marker = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
-        marker.bindPopup(`<b>${p.nome}</b>`);
         
-        // Evento de clique para a BORRACHA e POPUP
+        // Clique na Parada: Borracha OU Editor
         marker.on('click', (e) => {
-          if (e.originalEvent) e.originalEvent.stopPropagation(); // Evita clicar no mapa
+          if (e.originalEvent) e.originalEvent.stopPropagation();
           
           if (this.modoEdicao === 'borracha') {
             rota.paradas.splice(index, 1);
             this.salvarRotaNoFirebase(rota);
           } else {
-            // Se não estiver com a borracha, o clique normal abre o balão de texto (popup)
-            marker.togglePopup();
+            // ABRIR O MODAL DE EDIÇÃO
+            this.abrirEditorParada(rota, p);
           }
         });
         

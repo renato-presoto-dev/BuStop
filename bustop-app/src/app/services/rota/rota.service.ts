@@ -17,7 +17,8 @@ export interface Coordenada {
 }
 
 export interface Parada extends Coordenada {
-  nome?: string; 
+  nome?: string;
+  horarios?: string[]; 
 }
 
 export interface Rota {
