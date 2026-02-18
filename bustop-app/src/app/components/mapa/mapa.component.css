@@ -67,3 +67,15 @@
   border: 2px solid white;
   /* A cor de fundo (background-color) é injetada via JavaScript */
 }
+.sem-horario {
+  color: #888;
+  font-style: italic;
+  font-size: 0.9rem;
+  margin-top: 5px;
+  display: block;
+}
+
+.icon-walk {
+  font-size: 1.2rem;
+  margin-right: 5px;
+}
