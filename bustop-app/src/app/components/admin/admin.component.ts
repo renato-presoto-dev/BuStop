@@ -153,7 +153,7 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   private camadas: L.Layer[] = [];
 
-  private renderizarMapa() {
+private renderizarMapa() {
     this.camadas.forEach(l => this.map.removeLayer(l));
     this.camadas = [];
 
@@ -168,20 +168,35 @@ export class AdminComponent implements OnInit, OnDestroy {
         opacity: r.id === this.rotaSelecionada?.id ? 1 : 0.4
       }).addTo(this.map);
 
-      // No modo ADMIN, clique na linha seleciona a rota para editar o trajeto
-      poly.on('click', (e) => {
-        L.DomEvent.stopPropagation(e);
+      // --- CORREÇÃO: Controle inteligente de clique na linha ---
+      poly.on('click', (e: any) => {
+        L.DomEvent.stopPropagation(e); // Impede duplo-clique no mapa
+
+        // SITUAÇÃO 1: Se estiver na aba "Pontos", clicar na linha CRIARÁ UM PONTO sobre ela
+        if (this.abaAtiva === 'paradas') {
+          this.criarNovoPontoGlobal(e.latlng.lat, e.latlng.lng);
+          return;
+        }
+
+        // SITUAÇÃO 2: Se estiver desenhando uma rota A, e clicar sobre a rota B, 
+        // a rota A ganhará um nó de trajeto passando por cima da rota B.
+        if (this.abaAtiva === 'rotas' && this.modoEdicao === 'desenhar' && this.rotaSelecionada && this.rotaSelecionada.id !== r.id) {
+          this.adicionarPontoAoCaminho(e.latlng.lat, e.latlng.lng);
+          return;
+        }
+
+        // SITUAÇÃO 3: Comportamento normal (Selecionar a rota clicada)
         this.rotaSelecionada = r;
         this.abaAtiva = 'rotas';
       });
 
       this.camadas.push(poly);
       
-      // Se a rota está selecionada, desenha as bolinhas brancas do trajeto
+      // Desenha as bolinhas brancas do trajeto selecionado
       if (this.rotaSelecionada?.id === r.id) {
         r.caminho.forEach((p, idx) => {
           const dot = L.circleMarker([p.lat, p.lng], { radius: 5, color: 'white', fillOpacity: 1, fillColor: r.cor }).addTo(this.map);
-          dot.on('click', (e) => {
+          dot.on('click', (e: any) => {
             L.DomEvent.stopPropagation(e);
             if (this.modoEdicao === 'borracha') {
               r.caminho.splice(idx, 1);
@@ -193,7 +208,7 @@ export class AdminComponent implements OnInit, OnDestroy {
       }
     });
 
-    // 2. Renderiza os pontos globais
+    // 2. Renderiza os pontos globais de ônibus
     this.paradas.forEach(p => {
       const icon = L.divIcon({
         className: 'bus-stop-admin',
@@ -203,8 +218,17 @@ export class AdminComponent implements OnInit, OnDestroy {
 
       const marker = L.marker([p.lat, p.lng], { icon }).addTo(this.map);
       
-      marker.on('click', (e) => {
+      marker.on('click', (e: any) => {
         L.DomEvent.stopPropagation(e);
+
+        // --- CORREÇÃO: Se estiver desenhando uma rota e clicar em um ponto de ônibus, 
+        // a linha será forçada a passar exatamente sobre aquele ponto!
+        if (this.abaAtiva === 'rotas' && this.modoEdicao === 'desenhar' && this.rotaSelecionada) {
+          this.adicionarPontoAoCaminho(e.latlng.lat, e.latlng.lng);
+          return;
+        }
+
+        // Comportamento normal do ponto (apagar ou editar)
         if (this.modoEdicao === 'borracha') {
           this.rotaService.removerParada(p.id!);
         } else {
