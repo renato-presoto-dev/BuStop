@@ -2,7 +2,7 @@ import { Component, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
-import { RotaService, Rota, Parada } from '../../services/rota/rota.service';
+import { RotaService, Rota, Parada, HorarioPassagem } from '../../services/rota/rota.service';
 
 @Component({
   selector: 'app-mapa',
@@ -31,6 +31,9 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
   paradaSelecionada: Parada | null = null;
   rotaDestaqueSelecionada: Rota | null = null;
   distanciaUsuario: string = '';
+  
+  // NOVA VARIÁVEL: Guarda apenas os horários que ainda vão passar hoje
+  horariosProximos: HorarioPassagem[] = [];
 
   constructor(private rotaService: RotaService) {}
 
@@ -131,6 +134,9 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
   abrirPainelParada(parada: Parada) {
     this.paradaSelecionada = parada;
     this.limparRotaDestaque(); // Limpa o trajeto anterior se houver
+    
+    // Filtra os horários para mostrar apenas os próximos
+    this.filtrarHorariosProximos();
 
     // Traçar linha pontilhada do utilizador até ao ponto
     if (this.userLatLng) {
@@ -146,6 +152,27 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
     } else {
       this.map.flyTo([parada.lat, parada.lng], 16);
     }
+  }
+  
+  // NOVA FUNÇÃO: Filtra os horários baseados na hora do sistema
+  private filtrarHorariosProximos() {
+    if (!this.paradaSelecionada || !this.paradaSelecionada.horarios) {
+      this.horariosProximos = [];
+      return;
+    }
+
+    const agora = new Date();
+    // Converte a hora atual em minutos (Ex: 10:30 = 630 minutos) para facilitar a comparação
+    const minutosAtuais = agora.getHours() * 60 + agora.getMinutes();
+
+    this.horariosProximos = this.paradaSelecionada.horarios.filter(h => {
+      // Divide "07:15" em "07" e "15"
+      const [horaStr, minutoStr] = h.hora.split(':');
+      const minutosHorario = parseInt(horaStr, 10) * 60 + parseInt(minutoStr, 10);
+      
+      // Só retorna se o horário do ônibus for MAIOR ou IGUAL a agora
+      return minutosHorario >= minutosAtuais;
+    });
   }
 
   // Esta função é chamada quando o utilizador clica num horário da tabela

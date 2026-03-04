@@ -11,15 +11,19 @@
       <button class="btn-fechar" (click)="fecharPainel()">✕</button>
     </div>
 
-    <div class="panel-content">
-      <h4>Passagens por este ponto:</h4>
+<div class="panel-content">
+      <h4>Próximos horários:</h4>
       
       <div *ngIf="!paradaSelecionada.horarios?.length" class="sem-horario">
         Nenhum horário cadastrado para este ponto no momento.
       </div>
 
+      <div *ngIf="paradaSelecionada.horarios?.length && !horariosProximos.length" class="sem-horario">
+        Não há mais ônibus previstos para hoje neste ponto.
+      </div>
+
       <div class="horarios-grid">
-        <ng-container *ngFor="let h of paradaSelecionada.horarios">
+        <ng-container *ngFor="let h of horariosProximos">
           <div 
             class="card-horario" 
             *ngIf="getRota(h.rotaId) as rotaRef"
@@ -33,10 +37,9 @@
         </ng-container>
       </div>
 
-      <div class="dica-interativa" *ngIf="paradaSelecionada.horarios?.length">
+      <div class="dica-interativa" *ngIf="horariosProximos.length">
         <small>💡 Toque numa rota acima para visualizar o seu trajeto no mapa.</small>
       </div>
-
     </div>
   </div>
 </div>
