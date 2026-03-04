@@ -1,77 +1,46 @@
 <div class="admin-container">
   
-  <button 
-    class="btn-toggle-sidebar" 
-    [class.fechada]="!sidebarAberta" 
-    (click)="toggleSidebar()"
-    title="Abrir/Fechar Menu"
-  >
+  <button class="btn-toggle-sidebar" [class.fechada]="!sidebarAberta" (click)="toggleSidebar()">
     {{ sidebarAberta ? '◀' : '▶' }}
   </button>
 
   <div class="sidebar" [class.fechada]="!sidebarAberta">
-    <div class="sidebar-header">
-      <h2>Gerenciador</h2>
-      <button class="btn-criar" (click)="criarNovaRota()">+ Nova Rota</button>
+    
+    <div class="tabs-header">
+      <button [class.ativa]="abaAtiva === 'rotas'" (click)="abaAtiva = 'rotas'">🛣️ Trajetos</button>
+      <button [class.ativa]="abaAtiva === 'paradas'" (click)="abaAtiva = 'paradas'">🚏 Pontos</button>
     </div>
 
-    <div class="lista-rotas">
-      <div *ngIf="rotasVisuais.length === 0" class="empty-state">
-        Nenhuma rota criada.<br>Clique em "+ Nova Rota".
-      </div>
-
-      <div 
-        *ngFor="let rota of rotasVisuais" 
-        class="rota-card" 
-        [class.selecionada]="rota.id === rotaSelecionada?.id"
-        (click)="selecionarRota(rota)"
-      >
-        <div class="rota-info">
-          <span class="cor-dot" [style.background-color]="rota.cor"></span>
-          <input 
-            [(ngModel)]="rota.nome" 
-            (blur)="atualizarNomeRota(rota)"
-            (click)="$event.stopPropagation()"
-            class="input-nome"
-          >
-        </div>
-        <button class="btn-excluir" (click)="excluirRota(rota, $event)" title="Excluir Rota">
-            ❌
-        </button>
-
-        <div *ngIf="rota.id === rotaSelecionada?.id" class="rota-controles">
-          <label class="ciclo-toggle">
-            <input type="checkbox" [checked]="rota.isCiclica" (change)="alternarCiclo(rota)">
-            Rota Cíclica
-          </label>
-
-          <div class="ferramentas-desenho">
-            <button 
-              [class.ativo]="modoEdicao === 'caminho'" 
-              (click)="modoEdicao = 'caminho'; $event.stopPropagation()">
-              〰️ Trajeto
-            </button>
-            <button 
-              [class.ativo]="modoEdicao === 'parada'" 
-              (click)="modoEdicao = 'parada'; $event.stopPropagation()">
-              🚏 Parada
-            </button>
-            <button 
-              [class.ativo]="modoEdicao === 'borracha'" 
-              class="btn-borracha"
-              (click)="modoEdicao = 'borracha'; $event.stopPropagation()">
-              🧹 Apagar
-            </button>
+    <div class="sidebar-content">
+      
+      <div *ngIf="abaAtiva === 'rotas'">
+        <button class="btn-principal" (click)="criarNovaRota()">+ Nova Rota</button>
+       <div class="lista-items">
+          <div *ngFor="let r of rotas" class="card-item" [class.selecionado]="r.id === rotaSelecionada?.id" (click)="rotaSelecionada = r">
+            <span class="cor-dot" [style.background-color]="r.cor"></span>
+            
+            <input [(ngModel)]="r.nome" (blur)="atualizarNomeRota(r)" class="input-transparente">
+            <button class="btn-mini-del" (click)="excluirRota(r.id, $event)">🗑️</button>
+            
           </div>
-          
-          <small class="dica-ferramenta" *ngIf="modoEdicao !== 'borracha'">
-            Clique no mapa para desenhar.
-          </small>
-          <small class="dica-ferramenta" *ngIf="modoEdicao === 'borracha'" style="color: #dc3545;">
-            Clique num ponto para excluir.
-          </small>
         </div>
       </div>
+
+      <div *ngIf="abaAtiva === 'paradas'">
+        <p class="instrucao">Clique no mapa para criar um novo ponto de ônibus global.</p>
+        <div class="lista-items">
+          <div *ngFor="let p of paradas" class="card-item" (click)="abrirEditorParada(p)">
+            <span>🚏 {{ p.nome }}</span>
+            <small>{{ p.horarios.length }} horários</small>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="toolbar">
+      <button [class.ativo]="modoEdicao === 'desenhar'" (click)="modoEdicao = 'desenhar'">✍️ Desenhar</button>
+      <button [class.ativo]="modoEdicao === 'borracha'" (click)="modoEdicao = 'borracha'" class="btn-borracha">🧹 Apagar</button>
     </div>
   </div>
 
@@ -82,35 +51,36 @@
   <div class="modal-backdrop" *ngIf="paradaEmEdicao">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Editar Ponto</h3>
-        <button class="btn-fechar" (click)="fecharEditorParada()">✕</button>
+        <h3>Gerenciar Ponto de Ônibus</h3>
+        <button (click)="paradaEmEdicao = null">✕</button>
       </div>
 
       <div class="modal-body">
         <label>Nome do Ponto:</label>
-        <input type="text" [(ngModel)]="paradaEmEdicao.nome" class="form-control" placeholder="Ex: Praça Central">
+        <input type="text" [(ngModel)]="paradaEmEdicao.nome" class="form-control">
 
         <hr>
-
-        <label>Horários de Passagem:</label>
-        <div class="add-horario-row">
-          <input type="time" [(ngModel)]="novoHorarioTemp" class="form-control">
-          <button (click)="adicionarHorario()" class="btn-add">Adicionar</button>
+        <h4>Vincular Horário a uma Rota</h4>
+        <div class="add-horario-complexo">
+          <input type="time" [(ngModel)]="novoHorarioHora">
+          <select [(ngModel)]="novoHorarioRotaId">
+            <option value="">Selecione a Rota</option>
+            <option *ngFor="let r of rotas" [value]="r.id">{{ r.nome }}</option>
+          </select>
+          <button (click)="adicionarHorarioAParada()">+</button>
         </div>
 
-        <div class="lista-horarios">
-          <div *ngFor="let hora of paradaEmEdicao.horarios; let i = index" class="horario-tag">
-            {{ hora }}
-            <span (click)="removerHorario(i)" title="Remover">✕</span>
-          </div>
-          <div *ngIf="!paradaEmEdicao.horarios?.length" style="color: #999; font-size: 0.8rem;">
-            Nenhum horário.
+        <div class="tabela-horarios">
+          <div *ngFor="let h of paradaEmEdicao.horarios; let i = index" class="linha-horario">
+            <strong>{{ h.hora }}</strong>
+            <span class="badge-rota" [style.background]="'#eee'">{{ getNomeRota(h.rotaId) }}</span>
+            <button (click)="removerHorarioDaParada(i)">✕</button>
           </div>
         </div>
       </div>
 
       <div class="modal-footer">
-        <button class="btn-salvar" (click)="salvarEdicaoParada()">Salvar Alterações</button>
+        <button class="btn-salvar" (click)="salvarParada()">Salvar Tudo</button>
       </div>
     </div>
   </div>

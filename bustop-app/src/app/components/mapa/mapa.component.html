@@ -1,32 +1,42 @@
 <div class="mapa-container">
   <div id="map"></div>
 
-  <div class="info-panel" *ngIf="rotaSelecionada && paradaSelecionada">
+  <div class="info-panel" *ngIf="paradaSelecionada">
     
-    <div class="panel-header" [style.border-left-color]="rotaSelecionada.cor">
+    <div class="panel-header">
       <div>
-        <h3>{{ paradaSelecionada.nome || 'Ponto de Ônibus' }}</h3>
-        <p>Rota: <strong>{{ rotaSelecionada.nome }}</strong></p>
+        <h3>🚏 {{ paradaSelecionada.nome }}</h3>
+        <p *ngIf="distanciaUsuario">A <strong>{{ distanciaUsuario }}</strong> de si</p>
       </div>
       <button class="btn-fechar" (click)="fecharPainel()">✕</button>
     </div>
 
     <div class="panel-content">
-      <h4>Horários neste ponto:</h4>
+      <h4>Passagens por este ponto:</h4>
       
-      <div class="horarios-grid">
-        <span *ngFor="let hora of paradaSelecionada.horarios" class="badge-hora">
-          {{ hora }}
-        </span>
+      <div *ngIf="!paradaSelecionada.horarios?.length" class="sem-horario">
+        Nenhum horário cadastrado para este ponto no momento.
+      </div>
 
-        <span *ngIf="!paradaSelecionada.horarios?.length" class="sem-horario">
-          Nenhum horário cadastrado para este ponto.
-        </span>
+      <div class="horarios-grid">
+        <ng-container *ngFor="let h of paradaSelecionada.horarios">
+          <div 
+            class="card-horario" 
+            *ngIf="getRota(h.rotaId) as rotaRef"
+            [style.border-left-color]="rotaRef.cor"
+            [class.card-ativo]="rotaDestaqueSelecionada?.id === rotaRef.id"
+            (click)="destacarRota(rotaRef.id!)"
+          >
+            <span class="hora">{{ h.hora }}</span>
+            <span class="nome-rota" [style.color]="rotaRef.cor">{{ rotaRef.nome }}</span>
+          </div>
+        </ng-container>
       </div>
-      
-      <div class="distancia-info" *ngIf="distanciaUsuario">
-        <span class="icon-walk">🚶</span> Você está a <strong>{{ distanciaUsuario }}</strong> daqui.
+
+      <div class="dica-interativa" *ngIf="paradaSelecionada.horarios?.length">
+        <small>💡 Toque numa rota acima para visualizar o seu trajeto no mapa.</small>
       </div>
+
     </div>
   </div>
 </div>

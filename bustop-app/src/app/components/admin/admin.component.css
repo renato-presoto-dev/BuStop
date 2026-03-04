@@ -125,3 +125,78 @@
 /* Leaflet Hover Zoom */
 ::ng-deep .admin-path-node:hover div,
 ::ng-deep .bus-stop-icon:hover div { transform: scale(1.2); transition: transform 0.1s; }
+
+.tabs-header {
+  display: flex;
+  background: #eee;
+}
+
+.tabs-header button {
+  flex: 1;
+  padding: 15px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-weight: bold;
+  color: #666;
+}
+
+.tabs-header button.ativa {
+  background: white;
+  color: #007bff;
+  border-bottom: 3px solid #007bff;
+}
+
+.instrucao {
+  padding: 15px;
+  font-size: 0.8rem;
+  color: #666;
+  background: #fdfdfe;
+  border-bottom: 1px solid #eee;
+}
+
+.add-horario-complexo {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 5px;
+  margin-bottom: 15px;
+}
+
+.linha-horario {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.badge-rota {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ferramentas flutuantes embaixo na sidebar */
+.toolbar {
+  padding: 10px;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 5px;
+}
+
+.toolbar button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+}
+
+.toolbar button.ativo {
+  background: #007bff;
+  color: white;
+}

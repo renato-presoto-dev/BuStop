@@ -2,13 +2,7 @@ import { FirebaseService } from './../firebase/firebase.service';
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { 
-  Firestore, 
-  collection, 
-  addDoc, 
-  deleteDoc, 
-  updateDoc, 
-  doc, 
-  onSnapshot 
+  Firestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot 
 } from 'firebase/firestore';
 
 export interface Coordenada {
@@ -16,19 +10,26 @@ export interface Coordenada {
   lng: number;
 }
 
-export interface Parada extends Coordenada {
-  nome?: string;
-  horarios?: string[]; 
-}
-
+// 1. ROTA AGORA SÓ TEM O TRAJETO
 export interface Rota {
   id?: string;
   nome: string;
   cor: string;
   isCiclica: boolean;    
   caminho: Coordenada[]; 
-  paradas: Parada[];
-  horarios?: string[];     
+}
+
+// 2. NOVA INTERFACE: Liga o horário a uma rota específica
+export interface HorarioPassagem {
+  hora: string;
+  rotaId: string; // ID da rota que passa neste horário
+}
+
+// 3. PARADA AGORA É INDEPENDENTE
+export interface Parada extends Coordenada {
+  id?: string;
+  nome: string;
+  horarios: HorarioPassagem[]; // Lista de horários com suas respectivas rotas
 }
 
 @Injectable({
@@ -36,64 +37,90 @@ export interface Rota {
 })
 export class RotaService {
   private db: Firestore;
+  
+  // Agora temos dois canais de dados separados
   private rotasSubject = new BehaviorSubject<Rota[]>([]);
+  private paradasSubject = new BehaviorSubject<Parada[]>([]);
   
   rotas$ = this.rotasSubject.asObservable();
+  paradas$ = this.paradasSubject.asObservable();
 
   constructor(private firebaseService: FirebaseService) {
     this.db = this.firebaseService.getFirestore();
     this.ouvirRotasEmTempoReal();
+    this.ouvirParadasEmTempoReal();
   }
 
-  // 1. READ (Ler em tempo real)
+  // ==========================================
+  // LÓGICA DAS ROTAS (Trajetos)
+  // ==========================================
   private ouvirRotasEmTempoReal() {
-    const rotasCollection = collection(this.db, 'rotas');
-
-    onSnapshot(rotasCollection, (snapshot) => {
+    onSnapshot(collection(this.db, 'rotas'), (snapshot) => {
       const rotasAtualizadas: Rota[] = snapshot.docs.map(doc => {
         const data = doc.data();
         return { 
           id: doc.id, 
           nome: data['nome'],
           cor: data['cor'],
-          isCiclica: data['isCiclica'] || false, // Garante que não venha nulo
-          caminho: data['caminho'] || [],        // Garante que seja um array
-          paradas: data['paradas'] || []         // Garante que seja um array
+          isCiclica: data['isCiclica'] || false,
+          caminho: data['caminho'] || []
         } as Rota;
       });
-      
       this.rotasSubject.next(rotasAtualizadas);
-    }, (error) => {
-      console.error("Erro ao buscar rotas:", error);
     });
   }
 
-  // 2. CREATE (Criar nova rota)
   async adicionarRota(rota: Rota) {
-    const { id, ...dadosDaRota } = rota; 
-    const rotasCollection = collection(this.db, 'rotas');
-    await addDoc(rotasCollection, dadosDaRota);
+    const { id, ...dados } = rota; 
+    await addDoc(collection(this.db, 'rotas'), dados);
   }
 
-  // 3. UPDATE (Atualizar rotas no banco)
   async atualizarRota(rota: Rota) {
     if (!rota.id) return;
-    
-    const docRef = doc(this.db, 'rotas', rota.id);
-    
-    // AQUI ESTAVA O ERRO: Agora enviamos as propriedades corretas
-    await updateDoc(docRef, {
-      nome: rota.nome,
-      cor: rota.cor,
-      isCiclica: rota.isCiclica,
-      caminho: rota.caminho,
-      paradas: rota.paradas
+    await updateDoc(doc(this.db, 'rotas', rota.id), {
+      nome: rota.nome, cor: rota.cor, isCiclica: rota.isCiclica, caminho: rota.caminho
     });
   }
 
-  // 4. DELETE (Apagar rota)
   async removerRota(id: string) {
-    const docRef = doc(this.db, 'rotas', id);
-    await deleteDoc(docRef);
+    await deleteDoc(doc(this.db, 'rotas', id));
+  }
+
+  // ==========================================
+  // LÓGICA DAS PARADAS (Pontos de Ônibus)
+  // ==========================================
+  private ouvirParadasEmTempoReal() {
+    onSnapshot(collection(this.db, 'paradas'), (snapshot) => {
+      const paradasAtualizadas: Parada[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          nome: data['nome'] || 'Ponto sem nome',
+          lat: data['lat'],
+          lng: data['lng'],
+          horarios: data['horarios'] || [] // Array de { hora, rotaId }
+        } as Parada;
+      });
+      this.paradasSubject.next(paradasAtualizadas);
+    });
+  }
+
+  async adicionarParada(parada: Parada) {
+    const { id, ...dados } = parada;
+    await addDoc(collection(this.db, 'paradas'), dados);
+  }
+
+  async atualizarParada(parada: Parada) {
+    if (!parada.id) return;
+    await updateDoc(doc(this.db, 'paradas', parada.id), {
+      nome: parada.nome,
+      lat: parada.lat,
+      lng: parada.lng,
+      horarios: parada.horarios
+    });
+  }
+
+  async removerParada(id: string) {
+    await deleteDoc(doc(this.db, 'paradas', id));
   }
 }

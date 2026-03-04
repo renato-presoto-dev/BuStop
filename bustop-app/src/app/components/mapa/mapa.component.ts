@@ -13,18 +13,23 @@ import { RotaService, Rota, Parada } from '../../services/rota/rota.service';
 })
 export class MapaComponent implements AfterViewInit, OnDestroy {
   private map: any;
-  private rotaSubscription: Subscription | undefined;
-  private camadasDeRotas: L.Layer[] = [];
+  private subs = new Subscription();
   
+  // Guardar os dados do Firebase localmente
+  rotas: Rota[] = [];
+  paradas: Parada[] = [];
+
+  // Camadas do mapa
+  private camadasParadas: L.Layer[] = [];
+  private camadaRotaDestaque: L.Polyline | null = null;
   private linhaConexaoUsuario: L.Polyline | null = null;
   private marcadorUsuario: L.Marker | null = null;
-  
-  // NOVO: Variável para guardar o ID do rastreador do GPS
   private watchId: number | null = null;
 
+  // Estado para a Interface (HTML)
   userLatLng: L.LatLng | null = null;
-  rotaSelecionada: Rota | null = null;
   paradaSelecionada: Parada | null = null;
+  rotaDestaqueSelecionada: Rota | null = null;
   distanciaUsuario: string = '';
 
   constructor(private rotaService: RotaService) {}
@@ -33,26 +38,26 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
     this.initMap(-23.9831, -48.8716);
     this.carregarLocalizacaoUsuario();
 
-    this.rotaSubscription = this.rotaService.rotas$.subscribe(rotas => {
-      this.desenharRotas(rotas);
-    });
+    // 1. Subscreve às Rotas (Apenas guardamos na memória para consulta rápida)
+    this.subs.add(this.rotaService.rotas$.subscribe(r => {
+      this.rotas = r;
+      // Se houver uma rota em destaque, redesenha-a caso os dados tenham mudado
+      if (this.rotaDestaqueSelecionada) {
+        this.destacarRota(this.rotaDestaqueSelecionada.id!);
+      }
+    }));
+
+    // 2. Subscreve às Paradas (Desenhamos no mapa sempre que atualiza)
+    this.subs.add(this.rotaService.paradas$.subscribe(p => {
+      this.paradas = p;
+      this.desenharParadasGlobais();
+    }));
   }
 
-  // A MÁGICA DA LIMPEZA ACONTECE AQUI
   ngOnDestroy(): void {
-    if (this.rotaSubscription) {
-      this.rotaSubscription.unsubscribe();
-    }
-    
-    // 1. Desliga o rastreador de GPS
-    if (this.watchId !== null) {
-      navigator.geolocation.clearWatch(this.watchId);
-    }
-
-    // 2. Destrói o mapa para liberar memória e não bugar o HTML ao voltar
-    if (this.map) {
-      this.map.remove();
-    }
+    this.subs.unsubscribe();
+    if (this.watchId !== null) navigator.geolocation.clearWatch(this.watchId);
+    if (this.map) this.map.remove();
   }
 
   private initMap(lat: number, lng: number): void {
@@ -64,126 +69,136 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
 
   private carregarLocalizacaoUsuario(): void {
     if (navigator.geolocation) {
-      
-      // 1. Pega a posição IMEDIATAMENTE (resolve o problema de não aparecer parado)
       navigator.geolocation.getCurrentPosition(
-        (position) => this.atualizarMarcadorUsuario(position),
-        (error) => console.warn('Erro no GPS inicial:', error),
-        { enableHighAccuracy: true, maximumAge: 10000 } // Aceita um cache de 10s para ser mais rápido
+        (pos) => this.atualizarMarcadorUsuario(pos),
+        (err) => console.warn('Erro GPS inicial:', err),
+        { enableHighAccuracy: true, maximumAge: 10000 }
       );
 
-      // 2. Fica assistindo caso o usuário comece a andar (salva o ID para limpar depois)
       this.watchId = navigator.geolocation.watchPosition(
-        (position) => this.atualizarMarcadorUsuario(position),
-        (error) => console.warn('Erro no GPS em movimento:', error),
+        (pos) => this.atualizarMarcadorUsuario(pos),
+        (err) => console.warn('Erro GPS movimento:', err),
         { enableHighAccuracy: true }
       );
     }
   }
 
-  // Criei essa função para não repetir código
   private atualizarMarcadorUsuario(position: GeolocationPosition): void {
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     this.userLatLng = new L.LatLng(lat, lng);
 
     if (this.marcadorUsuario) {
-      // Se o bonequinho já existe, só move ele de lugar
       this.marcadorUsuario.setLatLng(this.userLatLng);
     } else {
-      // Se não existe, cria ele
-      const iconeBonequinho = L.icon({
+      const icone = L.icon({
         iconUrl: 'assets/icones/pin-user.png',
         iconSize: [20, 40], iconAnchor: [20, 40], popupAnchor: [0, -40]
       });
-      this.marcadorUsuario = L.marker([lat, lng], { icon: iconeBonequinho }).addTo(this.map);
-      
-      // Faz o mapa "voar" até o usuário só na primeira vez que ele é criado
+      this.marcadorUsuario = L.marker([lat, lng], { icon: icone }).addTo(this.map);
       this.map.flyTo([lat, lng], 15);
     }
 
-    // Se a linha pontilhada estiver ativa e o usuário andou, atualizamos ela!
     if (this.linhaConexaoUsuario && this.paradaSelecionada) {
-      const destinoLatLng = new L.LatLng(this.paradaSelecionada.lat, this.paradaSelecionada.lng);
-      this.linhaConexaoUsuario.setLatLngs([this.userLatLng, destinoLatLng]);
-      
-      const distMetros = this.userLatLng.distanceTo(destinoLatLng);
-      this.distanciaUsuario = distMetros > 1000 
-        ? (distMetros / 1000).toFixed(1) + ' km' 
-        : Math.round(distMetros) + ' m';
+      const dest = new L.LatLng(this.paradaSelecionada.lat, this.paradaSelecionada.lng);
+      this.linhaConexaoUsuario.setLatLngs([this.userLatLng, dest]);
+      this.atualizarDistancia(this.userLatLng, dest);
     }
   }
 
-  // --- AÇÃO AO CLICAR NO PONTO ---
-  
-  selecionarPonto(rota: Rota, parada: Parada) {
-    this.rotaSelecionada = rota;
-    this.paradaSelecionada = parada;
+  // ==========================================
+  // INTERAÇÕES E DESENHOS NO MAPA
+  // ==========================================
 
-    if (this.linhaConexaoUsuario) {
-      this.map.removeLayer(this.linhaConexaoUsuario);
-      this.linhaConexaoUsuario = null;
-    }
+  private desenharParadasGlobais() {
+    // Limpa pontos antigos
+    this.camadasParadas.forEach(l => this.map.removeLayer(l));
+    this.camadasParadas = [];
 
-    if (this.userLatLng) {
-      const destinoLatLng = new L.LatLng(parada.lat, parada.lng);
-      
-      this.linhaConexaoUsuario = L.polyline([this.userLatLng, destinoLatLng], {
-        color: '#555', weight: 4, dashArray: '10, 10', opacity: 0.7
-      }).addTo(this.map);
+    const iconOnibus = L.divIcon({
+      className: 'bus-stop-icon',
+      html: `<div style="background-color:#007bff; width:22px; height:22px; border-radius:50%; border:2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:11px;">B</div>`,
+      iconSize: [26, 26], iconAnchor: [13, 13]
+    });
 
-      const distMetros = this.userLatLng.distanceTo(destinoLatLng);
-      this.distanciaUsuario = distMetros > 1000 
-        ? (distMetros / 1000).toFixed(1) + ' km' 
-        : Math.round(distMetros) + ' m';
-
-      this.map.fitBounds(this.linhaConexaoUsuario.getBounds(), {
-        padding: [50, 50], maxZoom: 16
-      });
-    }
-  }
-
-  fecharPainel() {
-    this.rotaSelecionada = null;
-    this.paradaSelecionada = null;
-    if (this.linhaConexaoUsuario) {
-      this.map.removeLayer(this.linhaConexaoUsuario);
-      this.linhaConexaoUsuario = null;
-    }
-  }
-
-  // --- DESENHO DO MAPA ---
-
-  private desenharRotas(rotas: Rota[]) {
-    this.limparRotasDoMapa();
-
-    rotas.forEach(rota => {
-      if (rota.caminho && rota.caminho.length > 0) {
-        const coords = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
-        if (rota.isCiclica && coords.length > 2) coords.push(coords[0]);
-
-        const linha = L.polyline(coords, { color: rota.cor, weight: 5, opacity: 0.8 }).addTo(this.map);
-        this.camadasDeRotas.push(linha);
-      }
-
-      if (rota.paradas && rota.paradas.length > 0) {
-        const iconOnibus = L.divIcon({
-          className: 'bus-stop-icon',
-          html: `<div style="background-color:${rota.cor}; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:10px;">B</div>`,
-          iconSize: [24, 24], iconAnchor: [12, 12]
-        });
-
-        rota.paradas.forEach((p) => {
-          const marcador = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
-          marcador.on('click', () => this.selecionarPonto(rota, p));
-          this.camadasDeRotas.push(marcador);
-        });
-      }
+    this.paradas.forEach((p) => {
+      const marcador = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
+      marcador.on('click', () => this.abrirPainelParada(p));
+      this.camadasParadas.push(marcador);
     });
   }
 
-  private limparRotasDoMapa() {
-    this.camadasDeRotas.forEach(l => this.map.removeLayer(l));
-    this.camadasDeRotas = [];
+  abrirPainelParada(parada: Parada) {
+    this.paradaSelecionada = parada;
+    this.limparRotaDestaque(); // Limpa o trajeto anterior se houver
+
+    // Traçar linha pontilhada do utilizador até ao ponto
+    if (this.userLatLng) {
+      const dest = new L.LatLng(parada.lat, parada.lng);
+      
+      this.linhaConexaoUsuario = L.polyline([this.userLatLng, dest], {
+        color: '#555', weight: 4, dashArray: '10, 10', opacity: 0.7
+      }).addTo(this.map);
+
+      this.atualizarDistancia(this.userLatLng, dest);
+
+      this.map.fitBounds(this.linhaConexaoUsuario.getBounds(), { padding: [50, 50], maxZoom: 16 });
+    } else {
+      this.map.flyTo([parada.lat, parada.lng], 16);
+    }
+  }
+
+  // Esta função é chamada quando o utilizador clica num horário da tabela
+  destacarRota(rotaId: string) {
+    this.limparRotaDestaque();
+
+    const rotaCompleta = this.rotas.find(r => r.id === rotaId);
+    if (!rotaCompleta || !rotaCompleta.caminho || rotaCompleta.caminho.length === 0) return;
+
+    this.rotaDestaqueSelecionada = rotaCompleta;
+
+    const coords = rotaCompleta.caminho.map(p => [p.lat, p.lng] as [number, number]);
+    if (rotaCompleta.isCiclica && coords.length > 2) coords.push(coords[0]);
+
+    this.camadaRotaDestaque = L.polyline(coords, { 
+      color: rotaCompleta.cor, 
+      weight: 6, 
+      opacity: 0.8 
+    }).addTo(this.map);
+
+    // Ajusta o mapa para mostrar o trajeto inteiro daquela rota específica
+    this.map.fitBounds(this.camadaRotaDestaque.getBounds(), { padding: [30, 30] });
+  }
+
+  fecharPainel() {
+    this.paradaSelecionada = null;
+    this.limparRotaDestaque();
+    if (this.linhaConexaoUsuario) {
+      this.map.removeLayer(this.linhaConexaoUsuario);
+      this.linhaConexaoUsuario = null;
+    }
+    if (this.userLatLng) this.map.flyTo(this.userLatLng, 15);
+  }
+
+  private limparRotaDestaque() {
+    this.rotaDestaqueSelecionada = null;
+    if (this.camadaRotaDestaque) {
+      this.map.removeLayer(this.camadaRotaDestaque);
+      this.camadaRotaDestaque = null;
+    }
+  }
+
+  private atualizarDistancia(inicio: L.LatLng, fim: L.LatLng) {
+    const distMetros = inicio.distanceTo(fim);
+    this.distanciaUsuario = distMetros > 1000 
+      ? (distMetros / 1000).toFixed(1) + ' km' 
+      : Math.round(distMetros) + ' m';
+  }
+
+  // --- Funções Auxiliares para o HTML ---
+  
+  // Encontra a Rota pelo ID para mostrarmos o Nome e a Cor no botão do horário
+  getRota(rotaId: string): Rota | undefined {
+    return this.rotas.find(r => r.id === rotaId);
   }
 }

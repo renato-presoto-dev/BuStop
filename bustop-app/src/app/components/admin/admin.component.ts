@@ -1,16 +1,9 @@
-import { RotaService, Rota, Parada  } from './../../services/rota/rota.service';
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
-
-
-interface RotaVisual extends Rota {
-  polylineObj?: L.Polyline;
-  marcadoresObj?: L.Marker[];
-}
-
+import { RotaService,  Rota, Parada, HorarioPassagem, Coordenada } from '../../services/rota/rota.service';
 @Component({
   selector: 'app-admin',
   standalone: true,
@@ -20,274 +13,210 @@ interface RotaVisual extends Rota {
 })
 export class AdminComponent implements OnInit, OnDestroy {
   private map: any;
-  private rotaSubscription: Subscription | undefined;
+  private subs = new Subscription();
 
-  // Estado Local
-  rotasVisuais: RotaVisual[] = [];
-  rotaSelecionada: RotaVisual | null = null;
-  
-  // Controle da Interface
-  sidebarAberta: boolean = true; // Controla se a barra lateral está visível
-  modoEdicao: 'caminho' | 'parada' | 'borracha' = 'caminho'; 
-  
-  coresDisponiveis = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6'];
+  // Dados do Banco
+  rotas: Rota[] = [];
+  paradas: Parada[] = [];
 
-  // Variáveis do Modal de Edição
+  // Estado da Interface
+  abaAtiva: 'rotas' | 'paradas' = 'rotas'; // Alterna entre gerenciar Rotas ou Pontos
+  sidebarAberta: boolean = true;
+  modoEdicao: 'desenhar' | 'borracha' = 'desenhar';
+  
+  // Seleções
+  rotaSelecionada: Rota | null = null;
   paradaEmEdicao: Parada | null = null;
-  rotaDaParadaEmEdicao: RotaVisual | null = null;
-  novoHorarioTemp: string = '';
+
+  // Temporários para o Modal
+  novoHorarioHora: string = '';
+  novoHorarioRotaId: string = '';
 
   constructor(private rotaService: RotaService) {}
 
   ngOnInit(): void {
     this.initMap();
-    this.rotaSubscription = this.rotaService.rotas$.subscribe(rotasDoBanco => {
-      this.sincronizarInterface(rotasDoBanco);
-    });
+
+    // Escuta Rotas
+    this.subs.add(this.rotaService.rotas$.subscribe(r => {
+      this.rotas = r;
+      this.renderizarMapa();
+    }));
+
+    // Escuta Paradas
+    this.subs.add(this.rotaService.paradas$.subscribe(p => {
+      this.paradas = p;
+      this.renderizarMapa();
+    }));
   }
 
   ngOnDestroy(): void {
-    if (this.rotaSubscription) {
-      this.rotaSubscription.unsubscribe();
-    }
-  }
-
-  // --- NOVA FUNÇÃO: TOGGLE SIDEBAR ---
-  toggleSidebar() {
-    this.sidebarAberta = !this.sidebarAberta;
-    
-    // Avisa o Leaflet que o tamanho da div do mapa mudou
-    // Espera 300ms (tempo da transição CSS) para recalcular
-    setTimeout(() => {
-      if (this.map) {
-        this.map.invalidateSize();
-      }
-    }, 300);
+    this.subs.unsubscribe();
+    if (this.map) this.map.remove();
   }
 
   private initMap(): void {
-    this.map = L.map('mapAdmin', {
-      center: [-23.5505, -46.6333],
-      zoom: 13
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap'
-    }).addTo(this.map);
+    this.map = L.map('mapAdmin', { center: [-23.9831, -48.8716], zoom: 13 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
 
     this.map.on('click', (e: any) => {
-      if (this.rotaSelecionada) {
-        if (this.modoEdicao === 'caminho') {
-          this.adicionarPontoCaminho(this.rotaSelecionada, e.latlng.lat, e.latlng.lng);
-        } else if (this.modoEdicao === 'parada') {
-          this.adicionarParadaDeOnibus(this.rotaSelecionada, e.latlng.lat, e.latlng.lng);
-        }
-      } else {
-        alert('Selecione uma rota na lista lateral para começar!');
+      if (this.abaAtiva === 'rotas' && this.rotaSelecionada) {
+        this.adicionarPontoAoCaminho(e.latlng.lat, e.latlng.lng);
+      } else if (this.abaAtiva === 'paradas') {
+        this.criarNovoPontoGlobal(e.latlng.lat, e.latlng.lng);
       }
     });
   }
 
-  // --- Ações de Rota ---
-
-  criarNovaRota() {
-    const cor = this.coresDisponiveis[this.rotasVisuais.length % this.coresDisponiveis.length];
-    
-    const novaRota: Rota = {
-      nome: `Rota ${this.rotasVisuais.length + 1}`,
-      cor: cor,
+  // ==========================================
+  // GESTÃO DE ROTAS (ABAS)
+  // ==========================================
+  
+  async criarNovaRota() {
+    const cores = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
+    const nova: Rota = {
+      nome: 'Nova Rota',
+      cor: cores[this.rotas.length % cores.length],
       isCiclica: false,
-      caminho: [],
-      paradas: []
+      caminho: []
     };
-
-    this.rotaService.adicionarRota(novaRota);
+    await this.rotaService.adicionarRota(nova);
+  }
+  atualizarNomeRota(rota: Rota) {
+    this.rotaService.atualizarRota(rota);
   }
 
-  selecionarRota(rota: RotaVisual) {
-    this.rotaSelecionada = rota;
-    this.fecharEditorParada();
-    
-    if (rota.paradas && rota.paradas.length > 0) {
-      const ultimo = rota.paradas[rota.paradas.length - 1];
-      this.map.panTo([ultimo.lat, ultimo.lng]);
-    } else if (rota.caminho && rota.caminho.length > 0) {
-      const ultimo = rota.caminho[rota.caminho.length - 1];
-      this.map.panTo([ultimo.lat, ultimo.lng]);
-    }
-  }
-
-  excluirRota(rota: RotaVisual, event: Event) {
-    event.stopPropagation();
-    if (confirm(`Tem certeza que deseja excluir a ${rota.nome}?`)) {
-      if (rota.id) {
-        this.rotaService.removerRota(rota.id);
+  excluirRota(id: string | undefined, event: Event) {
+    event.stopPropagation(); // Evita que o clique selecione a rota no fundo
+    if (id && confirm('Tem certeza que deseja excluir esta rota e o seu trajeto?')) {
+      this.rotaService.removerRota(id);
+      // Se a rota excluída era a que estava selecionada, limpa a tela
+      if (this.rotaSelecionada?.id === id) {
+        this.rotaSelecionada = null;
       }
     }
   }
 
-  atualizarNomeRota(rota: RotaVisual) {
-    this.salvarRotaNoFirebase(rota);
-  }
-
-  alternarCiclo(rota: RotaVisual) {
-    rota.isCiclica = !rota.isCiclica;
-    this.salvarRotaNoFirebase(rota);
-  }
-
-  // --- Lógica de Edição no Mapa ---
-
-  adicionarPontoCaminho(rota: RotaVisual, lat: number, lng: number) {
-    if (!rota.caminho) rota.caminho = [];
-    rota.caminho.push({ lat, lng });
-    this.salvarRotaNoFirebase(rota);
-  }
-
-  adicionarParadaDeOnibus(rota: RotaVisual, lat: number, lng: number) {
-    if (!rota.paradas) rota.paradas = [];
-    rota.paradas.push({ 
-      lat, 
-      lng, 
-      nome: `Ponto ${rota.paradas.length + 1}`,
-      horarios: []
-    });
-    this.salvarRotaNoFirebase(rota);
-  }
-
-  // --- Lógica do Modal de Edição de Ponto ---
-
-  abrirEditorParada(rota: RotaVisual, parada: Parada) {
-    this.rotaDaParadaEmEdicao = rota;
-    this.paradaEmEdicao = parada;
-    this.novoHorarioTemp = '';
-    
-    if (!this.paradaEmEdicao.horarios) {
-      this.paradaEmEdicao.horarios = [];
+  async adicionarPontoAoCaminho(lat: number, lng: number) {
+    if (this.rotaSelecionada && this.modoEdicao === 'desenhar') {
+      this.rotaSelecionada.caminho.push({ lat, lng });
+      await this.rotaService.atualizarRota(this.rotaSelecionada);
     }
   }
 
-  fecharEditorParada() {
-    this.paradaEmEdicao = null;
-    this.rotaDaParadaEmEdicao = null;
-  }
+  // ==========================================
+  // GESTÃO DE PARADAS (PONTOS GLOBAIS)
+  // ==========================================
 
-  adicionarHorario() {
-    if (this.paradaEmEdicao && this.novoHorarioTemp) {
-      if (!this.paradaEmEdicao.horarios) this.paradaEmEdicao.horarios = [];
-      this.paradaEmEdicao.horarios.push(this.novoHorarioTemp);
-      this.paradaEmEdicao.horarios.sort();
-      this.novoHorarioTemp = '';
+  async criarNovoPontoGlobal(lat: number, lng: number) {
+    if (this.modoEdicao === 'desenhar') {
+      const nova: Parada = {
+        nome: 'Novo Ponto',
+        lat, lng,
+        horarios: []
+      };
+      await this.rotaService.adicionarParada(nova);
     }
   }
 
-  removerHorario(index: number) {
-    if (this.paradaEmEdicao && this.paradaEmEdicao.horarios) {
-      this.paradaEmEdicao.horarios.splice(index, 1);
+  abrirEditorParada(parada: Parada) {
+    this.paradaEmEdicao = JSON.parse(JSON.stringify(parada)); // Clone para não editar direto
+    this.novoHorarioHora = '';
+    this.novoHorarioRotaId = '';
+  }
+
+  async adicionarHorarioAParada() {
+    if (this.paradaEmEdicao && this.novoHorarioHora && this.novoHorarioRotaId) {
+      const novo: HorarioPassagem = {
+        hora: this.novoHorarioHora,
+        rotaId: this.novoHorarioRotaId
+      };
+      this.paradaEmEdicao.horarios.push(novo);
+      this.paradaEmEdicao.horarios.sort((a, b) => a.hora.localeCompare(b.hora));
     }
   }
 
-  salvarEdicaoParada() {
-    if (this.rotaDaParadaEmEdicao) {
-      this.salvarRotaNoFirebase(this.rotaDaParadaEmEdicao);
-      this.fecharEditorParada();
+  removerHorarioDaParada(index: number) {
+    this.paradaEmEdicao?.horarios.splice(index, 1);
+  }
+
+  async salvarParada() {
+    if (this.paradaEmEdicao) {
+      await this.rotaService.atualizarParada(this.paradaEmEdicao);
+      this.paradaEmEdicao = null;
     }
   }
 
-  private async salvarRotaNoFirebase(rota: RotaVisual) {
-    if (rota.id) {
-      await this.rotaService.atualizarRota({
-        id: rota.id,
-        nome: rota.nome,
-        cor: rota.cor,
-        isCiclica: rota.isCiclica,
-        caminho: rota.caminho || [],
-        paradas: rota.paradas || []
-      });
-    }
-  }
+  // ==========================================
+  // RENDERIZAÇÃO
+  // ==========================================
 
-  // --- Renderização no Mapa ---
+  private camadas: L.Layer[] = [];
 
-  private sincronizarInterface(rotasDoBanco: Rota[]) {
-    this.rotasVisuais.forEach(r => this.limparDesenhosDaRota(r));
+  private renderizarMapa() {
+    this.camadas.forEach(l => this.map.removeLayer(l));
+    this.camadas = [];
 
-    this.rotasVisuais = rotasDoBanco.map(r => {
-      const visual: RotaVisual = { ...r, marcadoresObj: [] };
-      this.desenharRotaNoMapa(visual);
-      return visual;
-    });
-
-    if (this.rotaSelecionada) {
-      const rotaAindaExiste = this.rotasVisuais.find(r => r.id === this.rotaSelecionada!.id);
-      this.rotaSelecionada = rotaAindaExiste || null;
-    }
-  }
-
-  private desenharRotaNoMapa(rota: RotaVisual) {
-    rota.marcadoresObj = [];
-
-    // 1. Caminho
-    if (rota.caminho && rota.caminho.length > 0) {
-      const coordenadas = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
-      if (rota.isCiclica && coordenadas.length > 2) coordenadas.push(coordenadas[0]);
-
-      rota.polylineObj = L.polyline(coordenadas, { 
-        color: rota.cor, weight: 5, opacity: 0.7 
+    // 1. Renderiza os caminhos das rotas
+    this.rotas.forEach(r => {
+      const coords = r.caminho.map(p => [p.lat, p.lng] as [number, number]);
+      if (r.isCiclica && coords.length > 2) coords.push(coords[0]);
+      
+      const poly = L.polyline(coords, { 
+        color: r.cor, 
+        weight: r.id === this.rotaSelecionada?.id ? 8 : 4,
+        opacity: r.id === this.rotaSelecionada?.id ? 1 : 0.4
       }).addTo(this.map);
 
-      rota.caminho.forEach((p, index) => {
-        const icon = L.divIcon({
-          className: 'admin-path-node',
-          html: `<div style="background:#fff; border: 2px solid ${rota.cor}; width:10px; height:10px; border-radius:50%; cursor:pointer;"></div>`,
-          iconSize: [14, 14], iconAnchor: [7, 7]
-        });
-        
-        const marker = L.marker([p.lat, p.lng], { icon }).addTo(this.map);
-        
-        marker.on('click', (e) => {
-          if (e.originalEvent) e.originalEvent.stopPropagation();
-          if (this.modoEdicao === 'borracha') {
-            rota.caminho.splice(index, 1);
-            this.salvarRotaNoFirebase(rota);
-          }
-        });
-        
-        rota.marcadoresObj!.push(marker);
-      });
-    }
-
-    // 2. Paradas
-    if (rota.paradas && rota.paradas.length > 0) {
-      const iconOnibus = L.divIcon({
-        className: 'bus-stop-icon',
-        html: `<div style="background-color:${rota.cor}; width:24px; height:24px; border-radius:50%; border:3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:12px; cursor:pointer;">B</div>`,
-        iconSize: [30, 30], iconAnchor: [15, 15]
+      // No modo ADMIN, clique na linha seleciona a rota para editar o trajeto
+      poly.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        this.rotaSelecionada = r;
+        this.abaAtiva = 'rotas';
       });
 
-      rota.paradas.forEach((p, index) => {
-        const marker = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
-        
-        marker.on('click', (e) => {
-          if (e.originalEvent) e.originalEvent.stopPropagation();
-          
-          if (this.modoEdicao === 'borracha') {
-            rota.paradas.splice(index, 1);
-            this.salvarRotaNoFirebase(rota);
-          } else {
-            this.abrirEditorParada(rota, p);
-          }
+      this.camadas.push(poly);
+      
+      // Se a rota está selecionada, desenha as bolinhas brancas do trajeto
+      if (this.rotaSelecionada?.id === r.id) {
+        r.caminho.forEach((p, idx) => {
+          const dot = L.circleMarker([p.lat, p.lng], { radius: 5, color: 'white', fillOpacity: 1, fillColor: r.cor }).addTo(this.map);
+          dot.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (this.modoEdicao === 'borracha') {
+              r.caminho.splice(idx, 1);
+              this.rotaService.atualizarRota(r);
+            }
+          });
+          this.camadas.push(dot);
         });
-        
-        rota.marcadoresObj!.push(marker);
+      }
+    });
+
+    // 2. Renderiza os pontos globais
+    this.paradas.forEach(p => {
+      const icon = L.divIcon({
+        className: 'bus-stop-admin',
+        html: `<div style="background: white; border: 3px solid #333; width: 20px; height: 20px; border-radius: 50%;"></div>`,
+        iconSize: [26, 26], iconAnchor: [13, 13]
       });
-    }
+
+      const marker = L.marker([p.lat, p.lng], { icon }).addTo(this.map);
+      
+      marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (this.modoEdicao === 'borracha') {
+          this.rotaService.removerParada(p.id!);
+        } else {
+          this.abrirEditorParada(p);
+        }
+      });
+
+      this.camadas.push(marker);
+    });
   }
 
-  private limparDesenhosDaRota(rota: RotaVisual) {
-    if (rota.polylineObj) this.map.removeLayer(rota.polylineObj);
-    if (rota.marcadoresObj) {
-      rota.marcadoresObj.forEach(m => this.map.removeLayer(m));
-    }
-  }
+  // Helpers de UI
+  toggleSidebar() { this.sidebarAberta = !this.sidebarAberta; setTimeout(() => this.map.invalidateSize(), 300); }
+  getNomeRota(id: string) { return this.rotas.find(r => r.id === id)?.nome || 'Rota Desconhecida'; }
 }
