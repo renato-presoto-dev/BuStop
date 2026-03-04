@@ -1,9 +1,8 @@
-import { RotaService, Rota, Parada  } from './../../services/rota/rota.service';
 import { Component, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as L from 'leaflet';
 import { Subscription } from 'rxjs';
-
+import { RotaService, Rota, Parada } from '../../services/rota/rota.service';
 
 @Component({
   selector: 'app-mapa',
@@ -17,11 +16,12 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
   private rotaSubscription: Subscription | undefined;
   private camadasDeRotas: L.Layer[] = [];
   
-  // Elementos visuais temporários (Linha pontilhada e marcador do usuário)
   private linhaConexaoUsuario: L.Polyline | null = null;
   private marcadorUsuario: L.Marker | null = null;
+  
+  // NOVO: Variável para guardar o ID do rastreador do GPS
+  private watchId: number | null = null;
 
-  // Estado para o HTML
   userLatLng: L.LatLng | null = null;
   rotaSelecionada: Rota | null = null;
   paradaSelecionada: Parada | null = null;
@@ -30,7 +30,7 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
   constructor(private rotaService: RotaService) {}
 
   ngAfterViewInit(): void {
-    this.initMap(-23.5505, -46.6333); 
+    this.initMap(-23.9831, -48.8716);
     this.carregarLocalizacaoUsuario();
 
     this.rotaSubscription = this.rotaService.rotas$.subscribe(rotas => {
@@ -38,8 +38,21 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  // A MÁGICA DA LIMPEZA ACONTECE AQUI
   ngOnDestroy(): void {
-    if (this.rotaSubscription) this.rotaSubscription.unsubscribe();
+    if (this.rotaSubscription) {
+      this.rotaSubscription.unsubscribe();
+    }
+    
+    // 1. Desliga o rastreador de GPS
+    if (this.watchId !== null) {
+      navigator.geolocation.clearWatch(this.watchId);
+    }
+
+    // 2. Destrói o mapa para liberar memória e não bugar o HTML ao voltar
+    if (this.map) {
+      this.map.remove();
+    }
   }
 
   private initMap(lat: number, lng: number): void {
@@ -51,26 +64,53 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
 
   private carregarLocalizacaoUsuario(): void {
     if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          this.userLatLng = new L.LatLng(lat, lng);
+      
+      // 1. Pega a posição IMEDIATAMENTE (resolve o problema de não aparecer parado)
+      navigator.geolocation.getCurrentPosition(
+        (position) => this.atualizarMarcadorUsuario(position),
+        (error) => console.warn('Erro no GPS inicial:', error),
+        { enableHighAccuracy: true, maximumAge: 10000 } // Aceita um cache de 10s para ser mais rápido
+      );
 
-          if (this.marcadorUsuario) {
-            this.marcadorUsuario.setLatLng(this.userLatLng);
-          } else {
-            const iconeBonequinho = L.icon({
-              iconUrl: 'assets/icones/pin-user.png',
-              iconSize: [20, 40], iconAnchor: [20, 40], popupAnchor: [0, -40]
-            });
-            this.marcadorUsuario = L.marker([lat, lng], { icon: iconeBonequinho }).addTo(this.map);
-            this.map.flyTo([lat, lng], 15);
-          }
-        },
-        (error) => console.warn('Erro GPS:', error),
+      // 2. Fica assistindo caso o usuário comece a andar (salva o ID para limpar depois)
+      this.watchId = navigator.geolocation.watchPosition(
+        (position) => this.atualizarMarcadorUsuario(position),
+        (error) => console.warn('Erro no GPS em movimento:', error),
         { enableHighAccuracy: true }
       );
+    }
+  }
+
+  // Criei essa função para não repetir código
+  private atualizarMarcadorUsuario(position: GeolocationPosition): void {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    this.userLatLng = new L.LatLng(lat, lng);
+
+    if (this.marcadorUsuario) {
+      // Se o bonequinho já existe, só move ele de lugar
+      this.marcadorUsuario.setLatLng(this.userLatLng);
+    } else {
+      // Se não existe, cria ele
+      const iconeBonequinho = L.icon({
+        iconUrl: 'assets/icones/pin-user.png',
+        iconSize: [20, 40], iconAnchor: [20, 40], popupAnchor: [0, -40]
+      });
+      this.marcadorUsuario = L.marker([lat, lng], { icon: iconeBonequinho }).addTo(this.map);
+      
+      // Faz o mapa "voar" até o usuário só na primeira vez que ele é criado
+      this.map.flyTo([lat, lng], 15);
+    }
+
+    // Se a linha pontilhada estiver ativa e o usuário andou, atualizamos ela!
+    if (this.linhaConexaoUsuario && this.paradaSelecionada) {
+      const destinoLatLng = new L.LatLng(this.paradaSelecionada.lat, this.paradaSelecionada.lng);
+      this.linhaConexaoUsuario.setLatLngs([this.userLatLng, destinoLatLng]);
+      
+      const distMetros = this.userLatLng.distanceTo(destinoLatLng);
+      this.distanciaUsuario = distMetros > 1000 
+        ? (distMetros / 1000).toFixed(1) + ' km' 
+        : Math.round(distMetros) + ' m';
     }
   }
 
@@ -80,21 +120,16 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
     this.rotaSelecionada = rota;
     this.paradaSelecionada = parada;
 
-    // 1. Remove linha antiga
     if (this.linhaConexaoUsuario) {
       this.map.removeLayer(this.linhaConexaoUsuario);
       this.linhaConexaoUsuario = null;
     }
 
-    // 2. Traça nova rota pontilhada se tiver GPS do usuário
     if (this.userLatLng) {
       const destinoLatLng = new L.LatLng(parada.lat, parada.lng);
       
       this.linhaConexaoUsuario = L.polyline([this.userLatLng, destinoLatLng], {
-        color: '#555',
-        weight: 4,
-        dashArray: '10, 10',
-        opacity: 0.7
+        color: '#555', weight: 4, dashArray: '10, 10', opacity: 0.7
       }).addTo(this.map);
 
       const distMetros = this.userLatLng.distanceTo(destinoLatLng);
@@ -103,8 +138,7 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
         : Math.round(distMetros) + ' m';
 
       this.map.fitBounds(this.linhaConexaoUsuario.getBounds(), {
-        padding: [50, 50],
-        maxZoom: 16
+        padding: [50, 50], maxZoom: 16
       });
     }
   }
@@ -124,7 +158,6 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
     this.limparRotasDoMapa();
 
     rotas.forEach(rota => {
-      // Desenha o trajeto (Linha)
       if (rota.caminho && rota.caminho.length > 0) {
         const coords = rota.caminho.map(p => [p.lat, p.lng] as [number, number]);
         if (rota.isCiclica && coords.length > 2) coords.push(coords[0]);
@@ -133,7 +166,6 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
         this.camadasDeRotas.push(linha);
       }
 
-      // Desenha as Paradas
       if (rota.paradas && rota.paradas.length > 0) {
         const iconOnibus = L.divIcon({
           className: 'bus-stop-icon',
@@ -143,13 +175,7 @@ export class MapaComponent implements AfterViewInit, OnDestroy {
 
         rota.paradas.forEach((p) => {
           const marcador = L.marker([p.lat, p.lng], { icon: iconOnibus }).addTo(this.map);
-          
-          // AQUI ESTÁ A MUDANÇA: Não injetamos mais dados falsos.
-          // Passamos apenas a parada 'p' que veio do banco.
-          marcador.on('click', () => {
-            this.selecionarPonto(rota, p);
-          });
-
+          marcador.on('click', () => this.selecionarPonto(rota, p));
           this.camadasDeRotas.push(marcador);
         });
       }
