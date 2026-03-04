@@ -200,3 +200,31 @@
   background: #007bff;
   color: white;
 }
+/* Organiza o topo do cartão da rota */
+.card-header-rota {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/* Área extra que aparece quando a rota é selecionada */
+.controles-extras {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #ccc;
+  width: 100%;
+}
+
+.ciclo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #444;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ciclo-toggle input {
+  cursor: pointer;
+}

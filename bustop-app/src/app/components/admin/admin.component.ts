@@ -96,6 +96,10 @@ export class AdminComponent implements OnInit, OnDestroy {
       }
     }
   }
+  alternarCiclo(rota: Rota) {
+    rota.isCiclica = !rota.isCiclica;
+    this.rotaService.atualizarRota(rota);
+  }
 
   async adicionarPontoAoCaminho(lat: number, lng: number) {
     if (this.rotaSelecionada && this.modoEdicao === 'desenhar') {

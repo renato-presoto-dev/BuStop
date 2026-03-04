@@ -15,13 +15,23 @@
       
       <div *ngIf="abaAtiva === 'rotas'">
         <button class="btn-principal" (click)="criarNovaRota()">+ Nova Rota</button>
-       <div class="lista-items">
+        
+        <div class="lista-items">
           <div *ngFor="let r of rotas" class="card-item" [class.selecionado]="r.id === rotaSelecionada?.id" (click)="rotaSelecionada = r">
-            <span class="cor-dot" [style.background-color]="r.cor"></span>
             
-            <input [(ngModel)]="r.nome" (blur)="atualizarNomeRota(r)" class="input-transparente">
-            <button class="btn-mini-del" (click)="excluirRota(r.id, $event)">🗑️</button>
-            
+            <div class="card-header-rota">
+              <span class="cor-dot" [style.background-color]="r.cor"></span>
+              <input [(ngModel)]="r.nome" (blur)="atualizarNomeRota(r)" class="input-transparente" (click)="$event.stopPropagation()">
+              <button class="btn-mini-del" (click)="excluirRota(r.id, $event)">🗑️</button>
+            </div>
+
+            <div *ngIf="r.id === rotaSelecionada?.id" class="controles-extras" (click)="$event.stopPropagation()">
+              <label class="ciclo-toggle">
+                <input type="checkbox" [checked]="r.isCiclica" (change)="alternarCiclo(r)">
+                🔄 Rota Cíclica (Volta ao início)
+              </label>
+            </div>
+
           </div>
         </div>
       </div>
