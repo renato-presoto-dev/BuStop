@@ -7,16 +7,3 @@
 .map{
     height: 85%;
 }
-.navbar{
-    position: relative;
-    background-color: transparent;
-}
-.nav-container{ 
-    position: absolute;
-    display: flex;
-    height: 15vh;
-    width: 100%;
-    align-items: center;
-    justify-content: space-around;
-    background-color: transparent;
-}
